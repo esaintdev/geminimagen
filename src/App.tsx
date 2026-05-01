@@ -97,6 +97,23 @@ export default function App() {
     }
   };
 
+  const generateRandomPlate = () => {
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const randomLetters = Array.from({ length: 3 }, () => letters[Math.floor(Math.random() * letters.length)]).join('');
+    return `M25 ${randomLetters}`;
+  };
+
+  const CHAUFFEUR_FLEET = [
+    "Mercedes Maybach", "Mercedes Benz E Class", "Mercedes Benz S Class", 
+    "Mercedes Benz V Class", "BMW 7 Series", "Range Rover", 
+    "Rolls Royce Cullinan", "Rolls Royce Ghost", "Rolls Royce Phantom", "Bentley Mulsanne"
+  ];
+
+  const WEDDING_FLEET = [
+    "Mercedes S Class", "Rolls Royce Ghost", "Rolls Royce Cullinan", 
+    "Bentley Mulsanne", "Bentley Continental Flying Spur", "Rolls Royce Phantom"
+  ];
+
   const handleGenerateInternal = async (overridePrompt?: string) => {
     const targetPrompt = overridePrompt || prompt;
     if (!targetPrompt.trim() || isGenerating) return;
@@ -105,9 +122,47 @@ export default function App() {
     setError(null);
 
     try {
-      const views = ["Cinematic Wide Shot", "Side Profile", "Macro Close-up"];
-      const newImages = await generateMultiViewImages(targetPrompt, views, aspectRatio);
-      
+      const isChauffeur = targetPrompt.includes('M25') || ['Chauffeur', 'Wedding', 'Corporate'].includes(selectedCategory);
+      let promptsToGenerate: string[] = [];
+
+      if (isChauffeur) {
+        // Fleet Variation Mode
+        const fleet = selectedCategory === 'Wedding' ? WEDDING_FLEET : CHAUFFEUR_FLEET;
+        // Shuffle and pick 3 different vehicles
+        const shuffled = [...fleet].sort(() => 0.5 - Math.random()).slice(0, 3);
+        
+        promptsToGenerate = shuffled.map(vehicle => {
+          const plate = generateRandomPlate();
+          // Replace any existing vehicle mention with the new one
+          // This is a bit heuristic, but works well for the library prompts
+          let variated = targetPrompt;
+          
+          // Regex to find luxury car brands/models and replace them
+          const vehicleRegex = /(Mercedes[-\s]?[A-Z]*\s?Class|Mercedes[-\s]?Maybach|BMW\s?\d?\s?Series|Range\s?Rover|Rolls\s?Royce\s?[A-Za-z]*|Bentley\s?[A-Za-z]*\s?[A-Za-z]*)/gi;
+          variated = variated.replace(vehicleRegex, vehicle);
+          
+          // Replace license plate pattern
+          const plateRegex = /M25\s?[A-Z]{3}/g;
+          variated = variated.replace(plateRegex, plate);
+          
+          return variated;
+        });
+      } else {
+        // Standard View Variation Mode
+        const views = ["Cinematic Wide Shot", "Side Profile", "Macro Close-up"];
+        promptsToGenerate = views.map(view => `${targetPrompt} (${view})`);
+      }
+
+      const tasks = promptsToGenerate.map(async (p) => {
+        const url = await generateImage(p, aspectRatio);
+        return {
+          url,
+          prompt: p,
+          timestamp: Date.now() + Math.random(),
+        };
+      });
+
+      const newImages = await Promise.all(tasks);
       setCurrentImages(newImages);
       setHistory(prev => [...newImages, ...prev].slice(0, 30));
     } catch (err: any) {
